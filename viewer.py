@@ -61,14 +61,18 @@ def merge_pcm(arrays: list[np.ndarray]) -> np.ndarray:
 # ── Waveform plot widget ──────────────────────────────────────────────────────
 
 class WaveformPlot(pg.PlotWidget):
-    def __init__(self, title: str, color: str, pcm: np.ndarray, parent=None):
+    def __init__(self, title: str, color: str, pcm: np.ndarray, time_ms: np.ndarray, parent=None):
         super().__init__(parent=parent, background=PANEL_COLOR)
+
+        #print(pcm)
         self.setMinimumHeight(110)
         self.setMaximumHeight(160)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
         # Axes styling
         self.getAxis("bottom").setTextPen(pg.mkPen(TEXT_COLOR))
+        #self.getAxis("bottom").setTicks([[(v, str(v)) for v in time_ms]]) 
+        self.getAxis("bottom").setLabel("ms")      
         self.getAxis("left").setTextPen(pg.mkPen(TEXT_COLOR))
         for ax in ("bottom", "left", "top", "right"):
             self.getAxis(ax).setPen(pg.mkPen(BORDER_COLOR))
@@ -77,7 +81,7 @@ class WaveformPlot(pg.PlotWidget):
         self.showGrid(x=False, y=True, alpha=0.15)
 
         pen = pg.mkPen(color=color, width=1)
-        self.plot(pcm, pen=pen, antialias=True)
+        self.plot(time_ms, pcm, pen=pen, antialias=True)
 
         # Horizontal zero line
         self.addLine(y=0, pen=pg.mkPen(color=BORDER_COLOR, style=Qt.PenStyle.DashLine))
@@ -110,8 +114,8 @@ class WaveformPanel(QScrollArea):
             p.deleteLater()
         self._plots.clear()
 
-    def add_waveform(self, title: str, color: str, pcm: np.ndarray):
-        plot = WaveformPlot(title, color, pcm)
+    def add_waveform(self, title: str, color: str, pcm: np.ndarray, time_ms: np.ndarray):
+        plot = WaveformPlot(title, color, pcm, time_ms)
         self._layout.insertWidget(self._layout.count() - 1, plot)
         self._plots.append(plot)
 
@@ -127,11 +131,11 @@ class WaveformPanel(QScrollArea):
         # Merged first (only when multiple selected)
         if len(selected_rows) > 1:
             merged = selected_rows[-1]
-            self.add_waveform(merged["label"], merged["color"], merged["pcm"])
+            self.add_waveform(merged["label"], merged["color"], merged["pcm"], self.time_ms)
         # Individual rows after
         individual = selected_rows[:-1] if len(selected_rows) > 1 else selected_rows
         for row in individual:
-            self.add_waveform(row["label"], row["color"], row["pcm"])
+            self.add_waveform(row["label"], row["color"], row["pcm"], self.time_ms)
 
 
 # ── Main window ───────────────────────────────────────────────────────────────
@@ -295,6 +299,12 @@ class MainWindow(QMainWindow):
                 or f"Col{i}"
                 for i, col in enumerate(self._df.columns)
             ]
+            # Also grab the amplitude data headings
+            raw = pd.read_excel(path, header=None)
+            raw_times = raw.iloc[0, PCM_COL_START:].values.astype(float) # 'iloc[1:4, 15:20]' means 'p2:t4' in Excel parlance
+            mask = np.isfinite(raw_times) # only return cells that have a value
+            self._wave_panel.time_ms = raw_times[mask]
+
         except Exception as e:
             QMessageBox.critical(self, "Load Error", f"Could not read file:\n{e}")
             return
