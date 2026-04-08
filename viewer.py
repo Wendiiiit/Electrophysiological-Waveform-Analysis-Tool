@@ -120,23 +120,32 @@ class WaveformPanel(QScrollArea):
         self._plots.append(plot)
 
     def rebuild(self, selected_rows: list[dict]):
-        """
-        selected_rows: list of {"label": str, "pcm": np.ndarray, "color": str}
-        Merged waveform is first (index 0), individual rows follow.
-        Only show merged when more than one row is selected.
-        """
         self.clear()
-        if not selected_rows:
-            return
-        # Merged first (only when multiple selected)
-        if len(selected_rows) > 1:
-            merged = selected_rows[-1]
-            self.add_waveform(merged["label"], merged["color"], merged["pcm"], self.time_ms)
-        # Individual rows after
-        individual = selected_rows[:-1] if len(selected_rows) > 1 else selected_rows
-        for row in individual:
+        for row in selected_rows:
             self.add_waveform(row["label"], row["color"], row["pcm"], self.time_ms)
+    
+    #Merged waveform graph, creates one single plot and draws all selected waveform on top of each other 
+    def show_merged(self, selected_rows: list[dict]):
+        self.clear()
+        plot = pg.PlotWidget(background=PANEL_COLOR)
+        plot.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        plot.getAxis("bottom").setTextPen(pg.mkPen(TEXT_COLOR))
+        plot.getAxis("bottom").setLabel("ms")
+        plot.getAxis("left").setTextPen(pg.mkPen(TEXT_COLOR))
+        for ax in ("bottom", "left", "top", "right"):
+            plot.getAxis(ax).setPen(pg.mkPen(BORDER_COLOR))
+        plot.showGrid(x=False, y=True, alpha=0.15)
+        plot.setMouseEnabled(x=False, y=False)
+        plot.hideButtons()
+        plot.addLine(y=0, pen=pg.mkPen(color=BORDER_COLOR, style=Qt.PenStyle.DashLine))
 
+        for row in selected_rows:
+            pen = pg.mkPen(color=row["color"], width=1)
+            plot.plot(self.time_ms, row["pcm"], pen=pen, antialias=True)
+
+        self._layout.insertWidget(self._layout.count() - 1, plot)
+        self._plots.append(plot)
+        
 
 # ── Main window ───────────────────────────────────────────────────────────────
 
@@ -203,6 +212,8 @@ class MainWindow(QMainWindow):
 
         self._df: pd.DataFrame | None = None
         self._check_states: dict[int, bool] = {}
+        # Whether in merged view currently? 
+        self._merged_view = False
 
         self._build_ui()
         self._status("No file loaded — use Open to get started.")
@@ -232,6 +243,25 @@ class MainWindow(QMainWindow):
         sel_none_btn.setObjectName("secondary")
         sel_none_btn.clicked.connect(lambda: self._set_all_checks(False))
         toolbar.addWidget(sel_none_btn)
+
+        #Adding Merge and Back buttons in the UI 
+        toolbar.addSeparator()
+
+        self._merge_btn = QPushButton("⬡  Merge")
+        self._merge_btn.clicked.connect(self._show_merged)
+        toolbar.addWidget(self._merge_btn)
+
+        self._back_btn = QPushButton("← Back")
+        self._back_btn.setObjectName("secondary")
+        self._back_btn.clicked.connect(self._show_stacked)
+        self._back_btn.setVisible(False)
+        toolbar.addWidget(self._back_btn)
+
+
+
+
+
+
 
         # Central splitter
         splitter = QSplitter(Qt.Orientation.Vertical)
@@ -267,9 +297,9 @@ class MainWindow(QMainWindow):
         bottom_layout.setContentsMargins(8, 4, 8, 8)
         bottom_layout.setSpacing(4)
 
-        wave_label = QLabel("Waveforms")
-        wave_label.setObjectName("heading")
-        bottom_layout.addWidget(wave_label)
+        self._wave_label = QLabel("Waveforms")
+        self._wave_label.setObjectName("heading")
+        bottom_layout.addWidget(self._wave_label)
 
         self._wave_panel = WaveformPanel()
         bottom_layout.addWidget(self._wave_panel)
@@ -414,25 +444,54 @@ class MainWindow(QMainWindow):
     def _rebuild_waveforms(self):
         if self._df is None:
             return
-
         selected_indices = [i for i, v in self._check_states.items() if v]
         if not selected_indices:
             self._wave_panel.rebuild([])
             return
 
         rows_data = []
-        pcm_arrays = []
         for i, row_idx in enumerate(selected_indices):
             pcm   = self._get_pcm(row_idx)
             color = WAVEFORM_COLORS[i % len(WAVEFORM_COLORS)]
             label = self._row_label(row_idx)
             rows_data.append({"label": label, "color": color, "pcm": pcm})
-            pcm_arrays.append(pcm)
-
-        merged = merge_pcm(pcm_arrays)
-        rows_data.append({"label": "⬡  Merged (sum)", "color": MERGED_COLOR, "pcm": merged})
-
+        
         self._wave_panel.rebuild(rows_data)
+        self._wave_label.setText("Waveforms")
+    
+    # ── Merged Waveform ────────────────────────────────────────────────────────────
+    def _show_merged(self):
+        if self._df is None:
+            return
+        selected = [i for i, v in self._check_states.items() if v]
+    
+        if not selected:
+            self._status("No rows selected.")
+            return
+    
+        if len(selected) > 10:
+            self._status("Max 10 waveforms for merge — deselect some first.")
+            return
+   
+        self._merged_view = True
+        rows_data = []
+        for i, row_idx in enumerate(selected):
+            pcm   = self._get_pcm(row_idx)
+            color = WAVEFORM_COLORS[i % len(WAVEFORM_COLORS)]
+            label = self._row_label(row_idx)
+            rows_data.append({"label": label, "color": color, "pcm": pcm})
+        self._wave_panel.show_merged(rows_data)
+        self._wave_label.setText(f"Waveforms — Merged ({len(selected)} overlaid)")
+        self._merge_btn.setVisible(False)
+        self._back_btn.setVisible(True)
+        self._status(f"Showing {len(selected)} waveform(s) overlaid.")
+
+    # ── Stacked Waveform ────────────────────────────────────────────────────────────
+    def _show_stacked(self):
+        self._merged_view = False
+        self._rebuild_waveforms()
+        self._merge_btn.setVisible(True)
+        self._back_btn.setVisible(False)
 
     # ── Status bar ────────────────────────────────────────────────────────────
 
