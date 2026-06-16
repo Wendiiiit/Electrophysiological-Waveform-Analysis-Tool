@@ -57,6 +57,22 @@ def merge_pcm(arrays: list[np.ndarray]) -> np.ndarray:
     stacked = np.vstack([a[:min_len].astype(float) for a in arrays])
     return stacked.sum(axis=0)
 
+class XZoomViewBox(pg.ViewBox):
+    """ViewBox that zooms only the horizontal axis on mouse-wheel / two-finger
+    scroll, centered on the cursor. The vertical axis is left untouched."""
+
+    def wheelEvent(self, ev, axis=None):
+        # Reuse pyqtgraph's own scale factor so direction/feel match its
+        # convention: wheel-up (delta > 0) -> s < 1 -> zoom in.
+        s = 1.02 ** (ev.delta() * self.state["wheelScaleFactor"])
+
+        # Cursor position in data coords, so the zoom stays centered on it.
+        inv, _ = self.childGroup.transform().inverted()
+        center = pg.Point(inv.map(ev.pos()))
+
+        self._resetTarget()
+        self.scaleBy(x=s, y=1.0, center=center)   # y=1.0 -> vertical axis unchanged
+        ev.accept()                               # don't bubble up to the scroll area
 
 # ── Waveform plot widget ──────────────────────────────────────────────────────
 
@@ -127,7 +143,9 @@ class WaveformPanel(QScrollArea):
     #Merged waveform graph, creates one single plot and draws all selected waveform on top of each other 
     def show_merged(self, selected_rows: list[dict]):
         self.clear()
-        plot = pg.PlotWidget(background=PANEL_COLOR)
+        plot = pg.PlotWidget(background=PANEL_COLOR, viewBox=XZoomViewBox())
+
+        # plot = pg.PlotWidget(background=PANEL_COLOR)
         plot.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         plot.getAxis("bottom").setTextPen(pg.mkPen(TEXT_COLOR))
         plot.getAxis("bottom").setLabel("ms")
