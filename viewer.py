@@ -13,16 +13,17 @@ Usage:
 import sys
 import numpy as np
 import pandas as pd
+import math
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QSplitter, QTableWidget, QTableWidgetItem, QHeaderView,
     QPushButton, QLabel, QFileDialog, QScrollArea, QFrame,
     QCheckBox, QMessageBox, QStatusBar, QToolBar,
-    QSizePolicy,
+    QSizePolicy, QToolTip
 )
 from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QColor, QFont, QAction, QIcon
+from PyQt6.QtGui import QColor, QFont, QAction, QIcon, QCursor
 
 import pyqtgraph as pg
 
@@ -56,6 +57,111 @@ def merge_pcm(arrays: list[np.ndarray]) -> np.ndarray:
     min_len = min(len(a) for a in arrays)
     stacked = np.vstack([a[:min_len].astype(float) for a in arrays])
     return stacked.sum(axis=0)
+
+# ── Hover read-out (highlight nearest point + tooltip) ────────────────────────
+
+HOVER_PX_RADIUS = 12   # cursor must be within this many pixels of a point to snap
+HOVER_DOT_SIZE  = 9    # diameter (px) of the highlight dot — thicker than the 1px line
+
+def attach_hover_readout(plot: pg.PlotWidget):
+    """On mouse-move, highlight the nearest data point (filled dot in the curve's
+    colour) and show a persistent in-plot label with its value. Works for single-
+    or multi-curve plots."""
+    vb = plot.getViewBox()
+
+    highlight = pg.ScatterPlotItem(size=HOVER_DOT_SIZE, pxMode=True)
+    highlight.setZValue(1000)          # sit on top of the curves
+    highlight.hide()
+    plot.addItem(highlight)
+
+    # In-plot label instead of QToolTip — QToolTip auto-hides when the mouse stops.
+    readout = pg.TextItem(anchor=(0, 1), fill=pg.mkBrush(0, 0, 0, 170))
+    readout.setZValue(1001)
+    readout.hide()
+    plot.addItem(readout)
+
+    def on_move(evt):
+        pos = evt[0]                   # SignalProxy delivers the args as a tuple
+        if not vb.sceneBoundingRect().contains(pos):
+            highlight.hide(); readout.hide(); return
+
+        mp = vb.mapSceneToView(pos)
+        mx, my = mp.x(), mp.y()
+        xps, yps = vb.viewPixelSize()  # data units per pixel, per axis
+
+        best = None                    # (dist_px, x, y, color)
+        for item in plot.listDataItems():
+            xd, yd = item.getData()
+            if xd is None or len(xd) == 0:
+                continue
+            i = int(np.searchsorted(xd, mx))          # x is sorted (time axis)
+            for j in (i - 1, i, i + 1):               # check nearest neighbours
+                if 0 <= j < len(xd):
+                    d = math.hypot((xd[j] - mx) / xps, (yd[j] - my) / yps)
+                    if best is None or d < best[0]:
+                        color = pg.mkPen(item.opts["pen"]).color()
+                        best = (d, float(xd[j]), float(yd[j]), color)
+
+        if best is None or best[0] > HOVER_PX_RADIUS:
+            highlight.hide(); readout.hide(); return
+
+        _, px, py, color = best
+        highlight.setData([px], [py], symbol="o", size=HOVER_DOT_SIZE,
+                          brush=pg.mkBrush(color), pen=pg.mkPen(color))
+        highlight.show()
+        readout.setText(f"t = {px:.4g} ms\nval = {py:.4g}", color=color)
+        readout.setPos(px, py)
+        readout.show()
+
+    # SignalProxy rate-limits the mouse-move flood; keep refs alive on the widget.
+    plot._hover_proxy = pg.SignalProxy(plot.scene().sigMouseMoved, rateLimit=60, slot=on_move)
+    plot._hover_highlight = highlight
+    plot._hover_readout = readout
+
+def attach_hover_readout_deprecated(plot: pg.PlotWidget):
+    """On mouse-move, highlight the nearest data point (filled dot in the curve's
+    colour) and show a tooltip with its value. Works for single- or multi-curve plots."""
+    vb = plot.getViewBox()
+
+    highlight = pg.ScatterPlotItem(size=HOVER_DOT_SIZE, pxMode=True)
+    highlight.setZValue(1000)          # sit on top of the curves
+    highlight.hide()
+    plot.addItem(highlight)
+
+    def on_move(evt):
+        pos = evt[0]                   # SignalProxy delivers the args as a tuple
+        if not vb.sceneBoundingRect().contains(pos):
+            highlight.hide(); QToolTip.hideText(); return
+
+        mp = vb.mapSceneToView(pos)
+        mx, my = mp.x(), mp.y()
+        xps, yps = vb.viewPixelSize()  # data units per pixel, per axis
+
+        best = None                    # (dist_px, x, y, color)
+        for item in plot.listDataItems():
+            xd, yd = item.getData()
+            if xd is None or len(xd) == 0:
+                continue
+            i = int(np.searchsorted(xd, mx))          # x is sorted (time axis)
+            for j in (i - 1, i, i + 1):               # check nearest neighbours
+                if 0 <= j < len(xd):
+                    d = math.hypot((xd[j] - mx) / xps, (yd[j] - my) / yps)
+                    if best is None or d < best[0]:
+                        color = pg.mkPen(item.opts["pen"]).color()
+                        best = (d, float(xd[j]), float(yd[j]), color)
+
+        if best is None or best[0] > HOVER_PX_RADIUS:
+            highlight.hide(); QToolTip.hideText(); return
+
+        _, px, py, color = best
+        highlight.setData([px], [py], symbol="o", size=HOVER_DOT_SIZE,
+                          brush=pg.mkBrush(color), pen=pg.mkPen(color))
+        highlight.show()
+        QToolTip.showText(QCursor.pos(), f"t = {px:.4g} ms<br>value = {py:.4g}")
+
+    # SignalProxy rate-limits the mouse-move flood; keep refs alive on the widget.
+    plot._hover_proxy = pg.SignalProxy(plot.scene().sigMouseMoved, rateLimit=60, slot=on_move)
+    plot._hover_highlight = highlight
 
 class XZoomViewBox(pg.ViewBox):
     """ViewBox that zooms only the horizontal axis on mouse-wheel / two-finger
@@ -105,6 +211,7 @@ class WaveformPlot(pg.PlotWidget):
         # Disable all mouse interaction — scroll wheel scrolls the list instead
         self.setMouseEnabled(x=False, y=False)
         self.hideButtons()
+        attach_hover_readout(self)
 
 
 # ── Waveform panel (scrollable stack of plots) ───────────────────────────────
@@ -161,6 +268,7 @@ class WaveformPanel(QScrollArea):
             pen = pg.mkPen(color=row["color"], width=1)
             plot.plot(self.time_ms, row["pcm"], pen=pen, antialias=True)
 
+        attach_hover_readout(plot)
         self._layout.insertWidget(self._layout.count() - 1, plot)
         self._plots.append(plot)
         
