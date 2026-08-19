@@ -203,6 +203,10 @@ class WaveformPlot(pg.PlotWidget):
         self.showGrid(x=False, y=True, alpha=0.15)
 
         pen = pg.mkPen(color=color, width=1)
+
+        #print("time points:", len(time_ms))
+        #print("PCM samples:", len(pcm))
+
         self.plot(time_ms, pcm, pen=pen, antialias=True)
 
         # Horizontal zero line
