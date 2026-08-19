@@ -489,6 +489,7 @@ class MainWindow(QMainWindow):
 
         df = self._df
         meta_cols = list(df.columns[META_COL_SLICE])
+        meta_cols.pop(1)
         pcm_cols  = list(df.columns[PCM_COL_START:])
 
         col_headers = ["✓"] + meta_cols + ["PCM Samples", "Min", "Max"]
