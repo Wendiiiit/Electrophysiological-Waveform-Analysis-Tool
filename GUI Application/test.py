@@ -679,8 +679,8 @@ class MainWindow(QMainWindow):
             self._status("No rows selected.")
             return
     
-        if len(selected) > 10:
-            self._status("Max 10 waveforms for merge — deselect some first.")
+        if len(selected) > 40:
+            self._status("Max 40 waveforms for merge — deselect some first.")
             return
    
         self._merged_view = True
