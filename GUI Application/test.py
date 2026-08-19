@@ -249,7 +249,7 @@ class WaveformPanel(QScrollArea):
     def rebuild(self, selected_rows: list[dict]):
         self.clear()
         for row in selected_rows:
-            self.add_waveform(row["label"], row["color"], row["pcm"], self.time_ms)
+            self.add_waveform(row["label"], row["color"], row["pcm"], row["time_ms"])
     
     #Merged waveform graph, creates one single plot and draws all selected waveform on top of each other 
     def show_merged(self, selected_rows: list[dict]):
@@ -270,7 +270,7 @@ class WaveformPanel(QScrollArea):
 
         for row in selected_rows:
             pen = pg.mkPen(color=row["color"], width=1)
-            plot.plot(self.time_ms, row["pcm"], pen=pen, antialias=True)
+            plot.plot(row["time_ms"], row["pcm"], pen=pen, antialias=True)
 
         attach_hover_readout(plot)
         self._layout.insertWidget(self._layout.count() - 1, plot)
@@ -340,7 +340,7 @@ class MainWindow(QMainWindow):
             QSplitter::handle {{ background: {BORDER_COLOR}; }}
         """)
 
-        self._df: pd.DataFrame | None = None
+        self._time_ms_full: np.ndarray | None = None
         self._check_states: dict[int, bool] = {}
         # Whether in merged view currently? 
         self._merged_view = False
@@ -459,11 +459,15 @@ class MainWindow(QMainWindow):
                 or f"Col{i}"
                 for i, col in enumerate(self._df.columns)
             ]
-            # Also grab the amplitude data headings
+            # Read the full time row from the waveform region.
+            # Keep the original column positions intact. We do not remove NaNs
+            # here because X and Y must stay positionally aligned by Excel column.
+
             raw = pd.read_excel(path, header=None)
-            raw_times = raw.iloc[0, PCM_COL_START:].values.astype(float) # 'iloc[1:4, 15:20]' means 'p2:t4' in Excel parlance
-            mask = np.isfinite(raw_times) # only return cells that have a value
-            self._wave_panel.time_ms = raw_times[mask]
+            self._time_ms_full = pd.to_numeric(
+               raw.iloc[0, PCM_COL_START:],
+               errors="coerce"
+            ).to_numpy(dtype=float)
 
         except Exception as e:
             QMessageBox.critical(self, "Load Error", f"Could not read file:\n{e}")
@@ -557,12 +561,69 @@ class MainWindow(QMainWindow):
         self._rebuild_waveforms()
 
     # ── Waveform rebuilding ───────────────────────────────────────────────────
+    def _get_waveform(self, row_idx: int) -> tuple[np.ndarray, np.ndarray]:
+        """Return a validated (time_ms, pcm) pair for one recording.
 
-    def _get_pcm(self, row_idx: int) -> np.ndarray:
-        row   = self._df.iloc[row_idx, PCM_COL_START:]
-        data  = row.values.astype(float)
-        valid = data[~np.isnan(data)]
-        return valid
+        A recording may end before the full Excel time template ends. Trailing
+        blank PCM cells are therefore treated as the end of that recording.
+        Missing values inside the active waveform span are treated as invalid
+        instead of being silently removed.
+        """
+        if self._df is None:
+           raise ValueError("No Excel file is loaded.")
+
+        if self._time_ms_full is None:
+           raise ValueError("No time-axis data is available.")
+
+        pcm_raw = pd.to_numeric(
+            self._df.iloc[row_idx, PCM_COL_START:],
+            errors="coerce"
+        ).to_numpy(dtype=float)
+
+        time_raw = self._time_ms_full
+
+        # The full X and Y regions come from the same Excel columns.
+        if len(time_raw) != len(pcm_raw):
+            raise ValueError(
+               f"Time/sample column mismatch: "
+                f"{len(time_raw)} time values vs {len(pcm_raw)} PCM cells."
+            )
+
+        valid_pcm = np.isfinite(pcm_raw)
+
+        if not valid_pcm.any():
+           raise ValueError("This recording contains no PCM samples.")
+
+       # Trailing blanks are allowed and mark the end of a shorter recording.
+        last_valid_index = int(np.flatnonzero(valid_pcm)[-1])
+
+        time_ms = time_raw[:last_valid_index + 1]
+        pcm = pcm_raw[:last_valid_index + 1]
+
+        # An internal gap would break the time-to-amplitude correspondence.
+        if not np.all(np.isfinite(pcm)):
+            raise ValueError(
+                "The waveform contains missing PCM samples inside the recording."
+            )
+
+        if not np.all(np.isfinite(time_ms)):
+           raise ValueError(
+                "The corresponding time axis contains missing values."
+            )
+
+        # Hard requirement: each amplitude sample must have one time value.
+        if len(time_ms) != len(pcm):
+            raise ValueError(
+                f"X/Y mismatch: {len(time_ms)} time points "
+               f"vs {len(pcm)} PCM samples."
+            )
+
+        if len(time_ms) > 1 and not np.all(np.diff(time_ms) > 0):
+           raise ValueError("The time axis is not strictly increasing.")
+
+        return time_ms, pcm
+
+   
 
     def _row_label(self, row_idx: int) -> str:
         if self._df is None:
@@ -580,14 +641,33 @@ class MainWindow(QMainWindow):
             return
 
         rows_data = []
+        errors = []
+
         for i, row_idx in enumerate(selected_indices):
-            pcm   = self._get_pcm(row_idx)
             color = WAVEFORM_COLORS[i % len(WAVEFORM_COLORS)]
             label = self._row_label(row_idx)
-            rows_data.append({"label": label, "color": color, "pcm": pcm})
-        
+
+            try:
+                time_ms, pcm = self._get_waveform(row_idx)
+            except ValueError as e:
+                errors.append(f"{label}:{e}")
+                continue
+
+            rows_data.append({
+                "label": label, 
+                "color": color, 
+                "time_ms": time_ms,
+                "pcm":pcm
+            })
         self._wave_panel.rebuild(rows_data)
         self._wave_label.setText("Waveforms")
+
+        if errors:
+          self._status(
+              f"Skipped {len(errors)} invalid waveform(s). "
+              f"First issue: {errors[0]}"
+              )
+
     
     # ── Merged Waveform ────────────────────────────────────────────────────────────
     def _show_merged(self):
@@ -605,16 +685,47 @@ class MainWindow(QMainWindow):
    
         self._merged_view = True
         rows_data = []
+        errors = []
         for i, row_idx in enumerate(selected):
-            pcm   = self._get_pcm(row_idx)
             color = WAVEFORM_COLORS[i % len(WAVEFORM_COLORS)]
             label = self._row_label(row_idx)
-            rows_data.append({"label": label, "color": color, "pcm": pcm})
+
+            try:
+                time_ms, pcm = self._get_waveform(row_idx)
+            except ValueError as e:
+                errors.append(f"{label}:{e}")
+                continue
+
+            rows_data.append({
+                "label": label, 
+                "color": color, 
+                "time_ms": time_ms,
+                "pcm":pcm
+            })
+
+        if not rows_data: 
+            self._merged_view = False
+            self.status(
+                "None of the selected recordings contain valid waveform data."
+            )
+            return
+
         self._wave_panel.show_merged(rows_data)
-        self._wave_label.setText(f"Waveforms — Merged ({len(selected)} overlaid)")
+        self._wave_label.setText(
+            f"Waveforms — Merged ({len(rows_data)} overlaid)"
+        )
         self._merge_btn.setVisible(False)
         self._back_btn.setVisible(True)
-        self._status(f"Showing {len(selected)} waveform(s) overlaid.")
+
+        if errors: 
+            self._status(
+                f"Showing {len(rows_data)} waveform(s); "
+                f"skipped {len(errors)} invalid waveform(s). "
+                f"First issue: {errors[0]}"
+            )
+        else:
+            self._status(f"Showing {len(rows_data)} waveform(s) overlaid.")
+
 
     # ── Stacked Waveform ────────────────────────────────────────────────────────────
     def _show_stacked(self):
