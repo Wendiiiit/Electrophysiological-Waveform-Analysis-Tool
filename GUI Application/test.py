@@ -47,8 +47,21 @@ ACCENT_COLOR   = "#4e9af1"
 # Columns P+ (15 onwards) are PCM data
 
 META_COL_SLICE = slice(0, 9)    # A–I
+#Separate Vestibular and Cochlear into two different categories
+VESTIBULAR_COL_SLICE = slice(9, 12)  # J-L
+COCHLEAR_COL_SLICE = slice(12, 15)   # M-O
 PCM_COL_START  = 15             # P (0-based)
 
+#Helper function to handle option values
+#For handling missing MIN MAX PtP
+def format_optional_value(value) -> str:
+    if pd.isna(value):
+        return "—"
+
+    try:
+        return f"{float(value):.3f}"
+    except (TypeError, ValueError):
+        return "—"
 
 def merge_pcm(arrays: list[np.ndarray]) -> np.ndarray:
     """Sum multiple PCM arrays (audio mix), truncating to the shortest length."""
@@ -492,7 +505,8 @@ class MainWindow(QMainWindow):
         meta_cols.pop(1)
         pcm_cols  = list(df.columns[PCM_COL_START:])
 
-        col_headers = ["✓"] + meta_cols + ["PCM Samples", "Min", "Max"]
+        #Adding more Columns to GUI, for Cochlear and Vestibular PtP
+        col_headers = ["✓"] + meta_cols + ["Vestibular Min","Vestibular Max","Vestibular PtP","Cochlear Min","Cochlear Max","Cochlear PtP","Global Min", "Global Max","PCM Samples"]
         self._table.blockSignals(True)
         self._table.clearContents()
         self._table.setRowCount(len(df))
@@ -515,18 +529,62 @@ class MainWindow(QMainWindow):
                 item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
                 self._table.setItem(row_idx, col_offset + 1, item)
 
+            # Biological measurements 
+            vest_min = row.iloc[9]
+            vest_max = row.iloc[10]
+            vest_ptp = row.iloc[11]
+
+            coch_min = row.iloc[12]
+            coch_max = row.iloc[13]
+            coch_ptp = row.iloc[14]
+
+            measurement_values = [
+            vest_min,
+            vest_max,
+            vest_ptp,
+            coch_min,
+            coch_max,
+            coch_ptp,
+            ]
+
+            #Optional display depending on NA value logic 
+            #Need more understanding??
+            start_col = 1 + len(meta_cols)
+
+            for offset, value in enumerate(measurement_values):
+                item = QTableWidgetItem(format_optional_value(value))
+                item.setFlags(
+                    Qt.ItemFlag.ItemIsEnabled |
+                    Qt.ItemFlag.ItemIsSelectable
+                )
+
+                if pd.isna(value):
+                    item.setForeground(QColor("#666b78"))
+            #else:
+                #item.setForeground(QColor("#c8cdd8"))
+            
+            #Make sure the following part is in the for loop
+            #indentation sensitive
+                self._table.setItem(
+                row_idx,
+                start_col + offset,
+                item
+                )
+
             # PCM summary
             pcm_data = row[pcm_cols].values.astype(float)
             valid    = pcm_data[~np.isnan(pcm_data)]
+
             n_samp   = QTableWidgetItem(str(len(valid)))
             n_min    = QTableWidgetItem(f"{valid.min():.2f}" if len(valid) else "—")
             n_max    = QTableWidgetItem(f"{valid.max():.2f}" if len(valid) else "—")
+
             for item in (n_samp, n_min, n_max):
                 item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
                 item.setForeground(QColor("#888ea0"))
-            self._table.setItem(row_idx, len(col_headers) - 3, n_samp)
-            self._table.setItem(row_idx, len(col_headers) - 2, n_min)
-            self._table.setItem(row_idx, len(col_headers) - 1, n_max)
+            self._table.setItem(row_idx, start_col + 6, n_min)
+            self._table.setItem(row_idx, start_col + 7, n_max)
+            self._table.setItem(row_idx, start_col + 8, n_samp)
 
         # Column widths
         self._table.setColumnWidth(0, 36)
