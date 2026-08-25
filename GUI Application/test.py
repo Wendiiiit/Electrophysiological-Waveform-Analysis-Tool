@@ -15,6 +15,8 @@ import numpy as np
 import pandas as pd
 import math
 
+#Import function from input_output.py
+from input_output import build_io_curve_from_table
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QSplitter, QTableWidget, QTableWidgetItem, QHeaderView,
@@ -44,6 +46,8 @@ NEUTRAL_METADATA_COLOR = "#DDE8D5"
 VESTIBULAR_COLOR = "#F3D7B8"   
 COCHLEAR_COLOR   = "#D7E3F0"  
 MERGED_COLOR   = "#ffffff"
+VESTIBULAR_PLOT_COLOR = "#B9783E"
+COCHLEAR_PLOT_COLOR   = "#5B7FA6"
 
 # ── Data table column colours ────────────────────────────────────────────────
 COLUMN_COLORS = {
@@ -307,7 +311,17 @@ class WaveformPanel(QScrollArea):
         attach_hover_readout(plot)
         self._layout.insertWidget(self._layout.count() - 1, plot)
         self._plots.append(plot)
-        
+
+    #Display External Plot 
+    def show_plot_widget(self, plot):
+        self.clear()
+
+        self._layout.insertWidget(
+            self._layout.count() - 1,
+            plot
+        )
+
+        self._plots.append(plot)
 
 # ── Main window ───────────────────────────────────────────────────────────────
 
@@ -427,16 +441,17 @@ class MainWindow(QMainWindow):
         self._merge_btn.clicked.connect(self._show_merged)
         toolbar.addWidget(self._merge_btn)
 
+        #Input/Output curve button
+        self._io_btn = QPushButton("⬡ Input/Output Graph")
+        self._io_btn.setObjectName("secondary")
+        self._io_btn.clicked.connect(self._show_io_curve)
+        toolbar.addWidget(self._io_btn)
+
         self._back_btn = QPushButton("← Back")
         self._back_btn.setObjectName("secondary")
         self._back_btn.clicked.connect(self._show_stacked)
         self._back_btn.setVisible(False)
         toolbar.addWidget(self._back_btn)
-
-
-
-
-
 
 
         # Central splitter
@@ -739,7 +754,50 @@ class MainWindow(QMainWindow):
               f"Skipped {len(errors)} invalid waveform(s). "
               f"First issue: {errors[0]}"
               )
+    # ── Input / Output Curve ──────────────────────────────────────────────────────
 
+    def _show_io_curve(self):
+
+        if self._df is None:
+            self._status(
+                "Load an Excel file before generating an I/O curve."
+            )
+            return
+
+        result = build_io_curve_from_table(
+            parent=self,
+            table=self._table,
+            check_states=self._check_states,
+
+            panel_color=PANEL_COLOR,
+            border_color=BORDER_COLOR,
+            text_color=TEXT_COLOR,
+
+            cochlear_plot_color=COCHLEAR_PLOT_COLOR,
+            vestibular_plot_color=VESTIBULAR_PLOT_COLOR,
+
+            attach_hover=attach_hover_readout,
+        )
+
+        if result is None:
+            return
+
+        self._wave_panel.show_plot_widget(
+            result.plot
+        )
+
+        self._wave_label.setText(
+            result.title
+        )
+
+        self._merge_btn.setVisible(False)
+        self._io_btn.setVisible(False)
+        self._back_btn.setVisible(True)
+
+        self._status(
+            f"I/O curve generated from "
+            f"{result.point_count} recording(s)."
+        )
     
     # ── Merged Waveform ────────────────────────────────────────────────────────────
     def _show_merged(self):
@@ -804,6 +862,7 @@ class MainWindow(QMainWindow):
         self._merged_view = False
         self._rebuild_waveforms()
         self._merge_btn.setVisible(True)
+        self._io_btn.setVisible(True)
         self._back_btn.setVisible(False)
 
     # ── Status bar ────────────────────────────────────────────────────────────
