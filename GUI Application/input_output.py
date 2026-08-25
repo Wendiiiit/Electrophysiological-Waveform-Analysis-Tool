@@ -32,6 +32,7 @@ from PyQt6.QtWidgets import (
 DB_HEADER = "dB atten."
 COCHLEAR_HEADER = "Cochlear PtP"
 VESTIBULAR_HEADER = "Vestibular PtP"
+BOTH_HEADER = "Both"
 
 
 @dataclass
@@ -46,7 +47,7 @@ class IOCurveResult:
 
 @dataclass
 class IOCurveSettings:
-    """User-selected settings for one I/O curve."""
+    """User-selected settings for one I/O Graph."""
 
     measurement_name: str
     db_min: float
@@ -103,7 +104,7 @@ class IOCurveDialog(QDialog):
     def __init__(self, parent: QWidget, db_values: list[float]):
         super().__init__(parent)
 
-        self.setWindowTitle("Generate I/O Curve")
+        self.setWindowTitle("Generate I/O Graph")
         self.setMinimumWidth(380)
 
         layout = QFormLayout(self)
@@ -112,6 +113,7 @@ class IOCurveDialog(QDialog):
         self.measurement_combo.addItems([
             COCHLEAR_HEADER,
             VESTIBULAR_HEADER,
+            BOTH_HEADER,
         ])
         layout.addRow("Measurement Type:", self.measurement_combo)
 
@@ -211,7 +213,7 @@ def _collect_io_data(
     if len(x_values) < 2:
         raise ValueError(
             "At least two valid selected recordings are needed "
-            "to generate an I/O curve."
+            "to generate an I/O Graph."
         )
 
     x = np.asarray(x_values, dtype=float)
@@ -221,32 +223,44 @@ def _collect_io_data(
     order = np.argsort(x, kind="stable")
     return x[order], y[order]
 
-
 def _build_plot(
-    x: np.ndarray,
-    y: np.ndarray,
-    settings: IOCurveSettings,
     *,
+    x1: np.ndarray,
+    y1: np.ndarray,
+    label1: str,
+    color1: str,
+    settings: IOCurveSettings,
     panel_color: str,
     border_color: str,
     text_color: str,
-    line_color: str,
     attach_hover: Callable[[pg.PlotWidget], None] | None = None,
+    x2: np.ndarray | None = None,
+    y2: np.ndarray | None = None,
+    label2: str | None = None,
+    color2: str | None = None,
 ) -> pg.PlotWidget:
     """Create and style the pyqtgraph I/O plot."""
 
     plot = pg.PlotWidget(background=panel_color)
 
+    if settings.measurement_name == BOTH_HEADER:
+        title_text = "I/O Graph — Cochlear and Vestibular PtP"
+        y_label_text = "PtP"
+    else:
+        title_text = f"I/O Graph — {settings.measurement_name}"
+        y_label_text = settings.measurement_name
+
     plot.setTitle(
-        f"I/O Graph — {settings.measurement_name}",
+        title_text,
         color=text_color,
         size="12pt",
     )
 
     bottom_axis = plot.getAxis("bottom")
     left_axis = plot.getAxis("left")
-    bottom_axis.setLabel("dB SPL", color=text_color)
-    left_axis.setLabel(settings.measurement_name, color=text_color)
+
+    bottom_axis.setLabel("dB attenuation", color=text_color)
+    left_axis.setLabel(y_label_text, color=text_color)
 
     for axis_name in ("bottom", "left", "top", "right"):
         axis = plot.getAxis(axis_name)
@@ -255,19 +269,48 @@ def _build_plot(
 
     plot.showGrid(x=True, y=True, alpha=0.15)
 
+    # Add legend only if plotting two series
+    if x2 is not None and y2 is not None:
+        plot.addLegend()
+
+    # First series
     plot.plot(
-        x,
-        y,
-        pen=pg.mkPen(line_color, width=2),
+        x1,
+        y1,
+        pen=pg.mkPen(color1, width=2),
         symbol="o",
         symbolSize=8,
-        symbolBrush=pg.mkBrush(line_color),
-        symbolPen=pg.mkPen(line_color),
+        symbolBrush=pg.mkBrush(color1),
+        symbolPen=pg.mkPen(color1),
         antialias=True,
+        name=label1,
     )
 
+    # Optional second series
+    if (
+        x2 is not None
+        and y2 is not None
+        and label2 is not None
+        and color2 is not None
+    ):
+        plot.plot(
+            x2,
+            y2,
+            pen=pg.mkPen(color2, width=2),
+            symbol="o",
+            symbolSize=8,
+            symbolBrush=pg.mkBrush(color2),
+            symbolPen=pg.mkPen(color2),
+            antialias=True,
+            name=label2,
+        )
+
     if settings.y_min is not None and settings.y_max is not None:
-        plot.setYRange(settings.y_min, settings.y_max, padding=0)
+        plot.setYRange(
+            settings.y_min,
+            settings.y_max,
+            padding=0,
+        )
 
     if attach_hover is not None:
         attach_hover(plot)
@@ -299,7 +342,7 @@ def build_io_curve_from_table(
     if not selected_rows:
         QMessageBox.information(
             parent,
-            "I/O Curve",
+            "I/O Graph",
             "Select the recordings you want to include first.",
         )
         return None
@@ -308,7 +351,7 @@ def build_io_curve_from_table(
     if db_col is None:
         QMessageBox.warning(
             parent,
-            "I/O Curve",
+            "I/O Graph",
             f"Could not find the '{DB_HEADER}' column.",
         )
         return None
@@ -317,7 +360,7 @@ def build_io_curve_from_table(
     if not db_values:
         QMessageBox.warning(
             parent,
-            "I/O Curve",
+            "I/O Graph",
             "The selected rows contain no valid dB values.",
         )
         return None
@@ -331,7 +374,7 @@ def build_io_curve_from_table(
     if settings.db_min > settings.db_max:
         QMessageBox.warning(
             parent,
-            "I/O Curve",
+            "I/O Graph",
             "Minimum dB must be smaller than or equal to maximum dB.",
         )
         return None
@@ -343,19 +386,104 @@ def build_io_curve_from_table(
     ):
         QMessageBox.warning(
             parent,
-            "I/O Curve",
+            "I/O Graph",
             "Y-axis minimum must be smaller than Y-axis maximum.",
         )
         return None
 
-    ptp_col = _find_table_column(table, settings.measurement_name)
+    # ── BOTH series mode ─────────────────────────────────────────────
+    if settings.measurement_name == BOTH_HEADER:
+
+        coch_col = _find_table_column(table, COCHLEAR_HEADER)
+        vest_col = _find_table_column(table, VESTIBULAR_HEADER)
+
+        if coch_col is None or vest_col is None:
+            QMessageBox.warning(
+                parent,
+                "I/O Graph",
+                "Could not find both Cochlear PtP and Vestibular PtP columns.",
+            )
+            return None
+
+        try:
+            x_coch, y_coch = _collect_io_data(
+                table=table,
+                selected_rows=selected_rows,
+                db_col=db_col,
+                ptp_col=coch_col,
+                db_min=settings.db_min,
+                db_max=settings.db_max,
+            )
+        except ValueError:
+            x_coch = np.array([], dtype=float)
+            y_coch = np.array([], dtype=float)
+
+        try:
+            x_vest, y_vest = _collect_io_data(
+                table=table,
+                selected_rows=selected_rows,
+                db_col=db_col,
+                ptp_col=vest_col,
+                db_min=settings.db_min,
+                db_max=settings.db_max,
+            )
+        except ValueError:
+            x_vest = np.array([], dtype=float)
+            y_vest = np.array([], dtype=float)
+
+        if len(x_coch) == 0 and len(x_vest) == 0:
+            QMessageBox.warning(
+                parent,
+                "I/O Graph",
+                "No valid Cochlear or Vestibular PtP data could be plotted.",
+            )
+            return None
+
+        if len(x_coch) == 0:
+            QMessageBox.warning(
+                parent,
+                "I/O Graph",
+                "No valid Cochlear PtP data found. Plotting Vestibular only is recommended.",
+            )
+
+        if len(x_vest) == 0:
+            QMessageBox.warning(
+                parent,
+                "I/O Graph",
+                "No valid Vestibular PtP data found. Plotting Cochlear only is recommended.",
+            )
+
+        plot = _build_plot(
+            x1=x_coch,
+            y1=y_coch,
+            label1=COCHLEAR_HEADER,
+            color1=cochlear_plot_color,
+            x2=x_vest if len(x_vest) > 0 else None,
+            y2=y_vest if len(y_vest) > 0 else None,
+            label2=VESTIBULAR_HEADER if len(x_vest) > 0 else None,
+            color2=vestibular_plot_color if len(x_vest) > 0 else None,
+            settings=settings,
+            panel_color=panel_color,
+            border_color=border_color,
+            text_color=text_color,
+            attach_hover=attach_hover,
+    )
+
+# ── SINGLE series mode ───────────────────────────────────────────
+
+    ptp_col = _find_table_column(
+        table,
+        settings.measurement_name,
+    )
+
     if ptp_col is None:
         QMessageBox.warning(
             parent,
-            "I/O Curve",
+            "I/O Graph",
             f"Could not find the '{settings.measurement_name}' column.",
         )
         return None
+
 
     try:
         x, y = _collect_io_data(
@@ -366,25 +494,34 @@ def build_io_curve_from_table(
             db_min=settings.db_min,
             db_max=settings.db_max,
         )
+
     except ValueError as exc:
-        QMessageBox.warning(parent, "I/O Curve", str(exc))
+        QMessageBox.warning(
+            parent,
+            "I/O Graph",
+            str(exc),
+        )
         return None
+
 
     if settings.measurement_name == VESTIBULAR_HEADER:
         line_color = vestibular_plot_color
     else:
         line_color = cochlear_plot_color
 
+
     plot = _build_plot(
-        x,
-        y,
-        settings,
+        x1=x,
+        y1=y,
+        label1=settings.measurement_name,
+        color1=line_color,
+        settings=settings,
         panel_color=panel_color,
         border_color=border_color,
         text_color=text_color,
-        line_color=line_color,
         attach_hover=attach_hover,
     )
+
 
     return IOCurveResult(
         plot=plot,
@@ -392,3 +529,6 @@ def build_io_curve_from_table(
         point_count=len(x),
         measurement_name=settings.measurement_name,
     )
+        
+
+
