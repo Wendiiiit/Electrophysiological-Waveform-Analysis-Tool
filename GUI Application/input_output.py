@@ -113,7 +113,7 @@ class IOCurveDialog(QDialog):
             COCHLEAR_HEADER,
             VESTIBULAR_HEADER,
         ])
-        layout.addRow("Y-axis measurement:", self.measurement_combo)
+        layout.addRow("Measurement Type:", self.measurement_combo)
 
         self.db_min = QDoubleSpinBox()
         self.db_min.setRange(-1_000_000.0, 1_000_000.0)
@@ -136,14 +136,14 @@ class IOCurveDialog(QDialog):
         self.y_min.setDecimals(3)
         self.y_min.setValue(0.0)
         self.y_min.setEnabled(False)
-        layout.addRow("Y-axis minimum:", self.y_min)
+        layout.addRow("PtP minimum:", self.y_min)
 
         self.y_max = QDoubleSpinBox()
         self.y_max.setRange(-1_000_000_000.0, 1_000_000_000.0)
         self.y_max.setDecimals(3)
         self.y_max.setValue(500.0)
         self.y_max.setEnabled(False)
-        layout.addRow("Y-axis maximum:", self.y_max)
+        layout.addRow("PtP maximum:", self.y_max)
 
         self.auto_y.toggled.connect(self._toggle_manual_y)
 
@@ -238,14 +238,14 @@ def _build_plot(
     plot = pg.PlotWidget(background=panel_color)
 
     plot.setTitle(
-        f"I/O Curve — {settings.measurement_name}",
+        f"I/O Graph — {settings.measurement_name}",
         color=text_color,
         size="12pt",
     )
 
     bottom_axis = plot.getAxis("bottom")
     left_axis = plot.getAxis("left")
-    bottom_axis.setLabel("dB attenuation", color=text_color)
+    bottom_axis.setLabel("dB SPL", color=text_color)
     left_axis.setLabel(settings.measurement_name, color=text_color)
 
     for axis_name in ("bottom", "left", "top", "right"):
@@ -388,7 +388,7 @@ def build_io_curve_from_table(
 
     return IOCurveResult(
         plot=plot,
-        title=f"I/O Curve — {settings.measurement_name}",
+        title=f"I/O Graph — {settings.measurement_name}",
         point_count=len(x),
         measurement_name=settings.measurement_name,
     )
