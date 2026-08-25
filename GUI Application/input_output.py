@@ -259,7 +259,7 @@ def _build_plot(
     bottom_axis = plot.getAxis("bottom")
     left_axis = plot.getAxis("left")
 
-    bottom_axis.setLabel("dB attenuation", color=text_color)
+    bottom_axis.setLabel("dB SPL", color=text_color)
     left_axis.setLabel(y_label_text, color=text_color)
 
     for axis_name in ("bottom", "left", "top", "right"):
@@ -439,96 +439,94 @@ def build_io_curve_from_table(
             )
             return None
 
-        if len(x_coch) == 0:
-            QMessageBox.warning(
-                parent,
-                "I/O Graph",
-                "No valid Cochlear PtP data found. Plotting Vestibular only is recommended.",
-            )
-
-        if len(x_vest) == 0:
-            QMessageBox.warning(
-                parent,
-                "I/O Graph",
-                "No valid Vestibular PtP data found. Plotting Cochlear only is recommended.",
-            )
-
         plot = _build_plot(
             x1=x_coch,
             y1=y_coch,
             label1=COCHLEAR_HEADER,
             color1=cochlear_plot_color,
+            
             x2=x_vest if len(x_vest) > 0 else None,
             y2=y_vest if len(y_vest) > 0 else None,
             label2=VESTIBULAR_HEADER if len(x_vest) > 0 else None,
             color2=vestibular_plot_color if len(x_vest) > 0 else None,
+            
             settings=settings,
             panel_color=panel_color,
             border_color=border_color,
             text_color=text_color,
             attach_hover=attach_hover,
-    )
+        )
+            
+        return IOCurveResult(
+            plot=plot,
+            title="I/O Graph — Cochlear and Vestibular PtP",
+            point_count=len(x_coch) + len(x_vest),
+            measurement_name=settings.measurement_name,
+        )
+
+    
 
 # ── SINGLE series mode ───────────────────────────────────────────
-
-    ptp_col = _find_table_column(
-        table,
-        settings.measurement_name,
-    )
-
-    if ptp_col is None:
-        QMessageBox.warning(
-            parent,
-            "I/O Graph",
-            f"Could not find the '{settings.measurement_name}' column.",
-        )
-        return None
-
-
-    try:
-        x, y = _collect_io_data(
-            table=table,
-            selected_rows=selected_rows,
-            db_col=db_col,
-            ptp_col=ptp_col,
-            db_min=settings.db_min,
-            db_max=settings.db_max,
+    else: 
+        
+        ptp_col = _find_table_column(
+            table,
+            settings.measurement_name,
         )
 
-    except ValueError as exc:
-        QMessageBox.warning(
-            parent,
-            "I/O Graph",
-            str(exc),
+        if ptp_col is None:
+            QMessageBox.warning(
+                parent,
+                "I/O Graph",
+                f"Could not find the '{settings.measurement_name}' column.",
+            )
+            return None
+
+
+        try:
+            x, y = _collect_io_data(
+                table=table,
+                selected_rows=selected_rows,
+                db_col=db_col,
+                ptp_col=ptp_col,
+                db_min=settings.db_min,
+                db_max=settings.db_max,
+            )
+
+        except ValueError as exc:
+            QMessageBox.warning(
+                parent,
+                "I/O Graph",
+                str(exc),
+            )
+            return None
+
+
+        if settings.measurement_name == VESTIBULAR_HEADER:
+            line_color = vestibular_plot_color
+        else:
+            line_color = cochlear_plot_color
+
+
+        plot = _build_plot(
+            x1=x,
+            y1=y,
+            label1=settings.measurement_name,
+            color1=line_color,
+            settings=settings,
+            panel_color=panel_color,
+            border_color=border_color,
+            text_color=text_color,
+            attach_hover=attach_hover,
         )
-        return None
 
 
-    if settings.measurement_name == VESTIBULAR_HEADER:
-        line_color = vestibular_plot_color
-    else:
-        line_color = cochlear_plot_color
-
-
-    plot = _build_plot(
-        x1=x,
-        y1=y,
-        label1=settings.measurement_name,
-        color1=line_color,
-        settings=settings,
-        panel_color=panel_color,
-        border_color=border_color,
-        text_color=text_color,
-        attach_hover=attach_hover,
-    )
-
-
-    return IOCurveResult(
-        plot=plot,
-        title=f"I/O Graph — {settings.measurement_name}",
-        point_count=len(x),
-        measurement_name=settings.measurement_name,
-    )
+        return IOCurveResult(
+            plot=plot,
+            title=f"I/O Graph — {settings.measurement_name}",
+            point_count=len(x),
+            measurement_name=settings.measurement_name,
+        )
         
 
 
