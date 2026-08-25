@@ -33,13 +33,32 @@ WAVEFORM_COLORS = [
     "#4e9af1", "#f16c4e", "#4ef18a", "#f1d44e",
     "#c44ef1", "#4ef1e8", "#f14e8a", "#a8f14e",
 ]
-MERGED_COLOR   = "#ffffff"
-BG_COLOR       = "#1a1d23"
-PANEL_COLOR    = "#22252e"
-BORDER_COLOR   = "#2e3240"
-TEXT_COLOR      = "#c8cdd8"
-ACCENT_COLOR   = "#4e9af1"
 
+BG_COLOR       = "#F5F3EE"
+PANEL_COLOR    = "#ffffff"
+BORDER_COLOR   = "#D8D5CF"
+TEXT_COLOR      = "#202124"
+TABLE_GRID_COLOR = "#A8A8A8"
+ACCENT_COLOR   = "#6c85ab"
+NEUTRAL_METADATA_COLOR = "#DDE8D5"
+VESTIBULAR_COLOR = "#F3D7B8"   
+COCHLEAR_COLOR   = "#D7E3F0"  
+MERGED_COLOR   = "#ffffff"
+
+# ── Data table column colours ────────────────────────────────────────────────
+COLUMN_COLORS = {
+    "✓": NEUTRAL_METADATA_COLOR,
+    "Date/Time": NEUTRAL_METADATA_COLOR,
+    "Stim. dur (ms)": NEUTRAL_METADATA_COLOR,
+    "Hz (1=mono; 2=bi)": NEUTRAL_METADATA_COLOR,
+    "r/f": NEUTRAL_METADATA_COLOR,
+    "dB atten.": NEUTRAL_METADATA_COLOR,
+    "ISI": NEUTRAL_METADATA_COLOR,
+    "cont. dB noise": NEUTRAL_METADATA_COLOR,
+    "Desc": NEUTRAL_METADATA_COLOR,
+    "Vestibular PtP": VESTIBULAR_COLOR,
+    "Cochlear PtP": COCHLEAR_COLOR,
+}
 
 # ── Layout constants ──────────────────────────────────────────────────────────
 # Columns A–I (0-based: 0–8) are metadata labels
@@ -301,10 +320,23 @@ class MainWindow(QMainWindow):
             QMainWindow, QWidget {{ background: {BG_COLOR}; color: {TEXT_COLOR}; }}
             QTableWidget {{
                 background: {PANEL_COLOR};
-                gridline-color: {BORDER_COLOR};
-                border: 1px solid {BORDER_COLOR};
+                gridline-color: {TABLE_GRID_COLOR};
+                border: 1px solid {TABLE_GRID_COLOR};
                 color: {TEXT_COLOR};
                 font-size: 12px;
+            }}
+            QTableWidget::indicator {{
+                width: 18px;
+                height: 18px;
+            }}
+            QTableWidget::indicator:unchecked {{
+                border: 2px solid #7A7A7A;
+                background-color: #FFFFFF;
+                border-radius: 2px;
+            }}
+            QTableWidget::indicator:unchecked:hover {{
+                border: 2px solid #202124;
+                background-color: #F5F3EE;
             }}
             QHeaderView::section {{
                 background: {BORDER_COLOR};
@@ -334,8 +366,8 @@ class MainWindow(QMainWindow):
                 border: 1px solid {BORDER_COLOR};
             }}
             QPushButton#secondary:hover {{ background: {BORDER_COLOR}; }}
-            QLabel {{ color: {TEXT_COLOR}; font-size: 12px; }}
-            QLabel#heading {{ font-size: 13px; font-weight: bold; color: #ffffff; }}
+            QLabel {{ color: {TEXT_COLOR}; font-size: 13px; }}
+            QLabel#heading {{ font-size: 13px; font-weight: bold; color: #202124; }}
             QSpinBox {{
                 background: {PANEL_COLOR};
                 color: {TEXT_COLOR};
@@ -390,7 +422,8 @@ class MainWindow(QMainWindow):
         #Adding Merge and Back buttons in the UI 
         toolbar.addSeparator()
 
-        self._merge_btn = QPushButton("⬡  Merge")
+        self._merge_btn = QPushButton("⬡ Merge")
+        self._merge_btn.setObjectName("secondary")
         self._merge_btn.clicked.connect(self._show_merged)
         toolbar.addWidget(self._merge_btn)
 
@@ -421,10 +454,7 @@ class MainWindow(QMainWindow):
         top_layout.addWidget(tbl_label)
 
         self._table = QTableWidget()
-        self._table.setAlternatingRowColors(True)
-        self._table.setStyleSheet(f"""
-            QTableWidget {{ alternate-background-color: #1e2128; }}
-        """)
+        self._table.setAlternatingRowColors(False)
         self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self._table.verticalHeader().setVisible(False)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -521,12 +551,14 @@ class MainWindow(QMainWindow):
                 Qt.CheckState.Checked if self._check_states.get(row_idx) else Qt.CheckState.Unchecked
             )
             chk_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            chk_item.setBackground(QColor(COLUMN_COLORS["✓"]))
             self._table.setItem(row_idx, 0, chk_item)
 
             # Metadata cells
             for col_offset, col in enumerate(meta_cols):
                 item = QTableWidgetItem(str(row[col]))
                 item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+                item.setBackground(QColor(NEUTRAL_METADATA_COLOR))
                 self._table.setItem(row_idx, col_offset + 1, item)
 
             # Extract PtP measurements for display
@@ -534,19 +566,24 @@ class MainWindow(QMainWindow):
             coch_ptp = row.iloc[14]
 
             measurement_values = [
-            vest_ptp,
-            coch_ptp,
+            (vest_ptp,VESTIBULAR_COLOR),
+            (coch_ptp,COCHLEAR_COLOR),
             ]
 
             #Optional display depending on NA value logic 
             #Need more understanding??
             start_col = 1 + len(meta_cols)
 
-            for offset, value in enumerate(measurement_values):
+            for offset, (value,column_color) in enumerate(measurement_values):
                 item = QTableWidgetItem(format_optional_value(value))
                 item.setFlags(
                     Qt.ItemFlag.ItemIsEnabled |
                     Qt.ItemFlag.ItemIsSelectable
+                )
+
+                #Apply Asiigned Column Colour 
+                item.setBackground(
+                    QColor(column_color)
                 )
 
                 if pd.isna(value):
