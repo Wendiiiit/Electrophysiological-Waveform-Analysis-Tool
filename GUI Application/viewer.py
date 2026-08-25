@@ -399,6 +399,7 @@ class MainWindow(QMainWindow):
             QSplitter::handle {{ background: {BORDER_COLOR}; }}
         """)
 
+        self._df: pd.DataFrame | None = None
         self._time_ms_full: np.ndarray | None = None
         self._check_states: dict[int, bool] = {}
         # Whether in merged view currently? 
