@@ -503,10 +503,10 @@ class MainWindow(QMainWindow):
         df = self._df
         meta_cols = list(df.columns[META_COL_SLICE])
         meta_cols.pop(1)
-        pcm_cols  = list(df.columns[PCM_COL_START:])
 
         #Adding more Columns to GUI, for Cochlear and Vestibular PtP
-        col_headers = ["✓"] + meta_cols + ["Vestibular Min","Vestibular Max","Vestibular PtP","Cochlear Min","Cochlear Max","Cochlear PtP","Global Min", "Global Max","PCM Samples"]
+        #Removed Vestibular Min Max, Cochlear Min Max, Global Min Max and PCM samples Columns. 
+        col_headers = ["✓"] + meta_cols + ["Vestibular PtP","Cochlear PtP"]
         self._table.blockSignals(True)
         self._table.clearContents()
         self._table.setRowCount(len(df))
@@ -529,21 +529,12 @@ class MainWindow(QMainWindow):
                 item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
                 self._table.setItem(row_idx, col_offset + 1, item)
 
-            # Biological measurements 
-            vest_min = row.iloc[9]
-            vest_max = row.iloc[10]
+            # Extract PtP measurements for display
             vest_ptp = row.iloc[11]
-
-            coch_min = row.iloc[12]
-            coch_max = row.iloc[13]
             coch_ptp = row.iloc[14]
 
             measurement_values = [
-            vest_min,
-            vest_max,
             vest_ptp,
-            coch_min,
-            coch_max,
             coch_ptp,
             ]
 
@@ -570,21 +561,6 @@ class MainWindow(QMainWindow):
                 start_col + offset,
                 item
                 )
-
-            # PCM summary
-            pcm_data = row[pcm_cols].values.astype(float)
-            valid    = pcm_data[~np.isnan(pcm_data)]
-
-            n_samp   = QTableWidgetItem(str(len(valid)))
-            n_min    = QTableWidgetItem(f"{valid.min():.2f}" if len(valid) else "—")
-            n_max    = QTableWidgetItem(f"{valid.max():.2f}" if len(valid) else "—")
-
-            for item in (n_samp, n_min, n_max):
-                item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
-                item.setForeground(QColor("#888ea0"))
-            self._table.setItem(row_idx, start_col + 6, n_min)
-            self._table.setItem(row_idx, start_col + 7, n_max)
-            self._table.setItem(row_idx, start_col + 8, n_samp)
 
         # Column widths
         self._table.setColumnWidth(0, 36)
