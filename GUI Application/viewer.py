@@ -22,7 +22,7 @@ from PyQt6.QtWidgets import (
     QSplitter, QTableWidget, QTableWidgetItem, QHeaderView,
     QPushButton, QLabel, QFileDialog, QScrollArea, QFrame,
     QCheckBox, QMessageBox, QStatusBar, QToolBar,
-    QSizePolicy, QToolTip
+    QSizePolicy, QToolTip, QComboBox
 )
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QColor, QFont, QAction, QIcon, QCursor
@@ -74,6 +74,16 @@ META_COL_SLICE = slice(0, 9)    # A–I
 VESTIBULAR_COL_SLICE = slice(9, 12)  # J-L
 COCHLEAR_COL_SLICE = slice(12, 15)   # M-O
 PCM_COL_START  = 15             # P (0-based)
+
+# Channel Display Windows 
+CHANNEL_WINDOWS = {
+    "All Channels": None, 
+    "Near-Field VsEP": (0.0, 20.0), 
+    "Acceleration": (20.0, 40.0), 
+    "Microphone": (40.0, 60.0)
+}
+
+
 
 #Helper function to handle option values
 #For handling missing MIN MAX PtP
@@ -455,6 +465,28 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(self._back_btn)
 
 
+        #Channel filter 
+        toolbar.addSeparator()
+
+        channel_label = QLabel("Filter by Channel:")
+        toolbar.addWidget(channel_label)
+
+        self._channel_combo = QComboBox()
+
+        self._channel_combo.addItems([
+            "All Channels",
+            "Near-Field VsEP",
+            "Acceleration",
+            "Microphone",
+        ])
+
+        toolbar.addWidget(self._channel_combo)
+
+        self._channel_combo.currentTextChanged.connect(
+            self._on_channel_changed
+        )
+
+
         # Central splitter
         splitter = QSplitter(Qt.Orientation.Vertical)
         splitter.setHandleWidth(4)
@@ -711,6 +743,55 @@ class MainWindow(QMainWindow):
 
         return time_ms, pcm
 
+
+    #Channel filtering logic
+    def _filter_channel_window(
+        self,
+        time_ms: np.ndarray,
+        pcm: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+
+        channel = self._channel_combo.currentText()
+
+        # Show the full waveform
+        if channel == "All Channels":
+            return time_ms, pcm
+
+        start_ms, end_ms = CHANNEL_WINDOWS[channel]
+
+        if channel == "Microphone":
+            mask = (
+                (time_ms >= start_ms) &
+                (time_ms <= end_ms)
+            )
+        else:
+            mask = (
+                (time_ms >= start_ms) &
+                (time_ms < end_ms)
+            )
+
+        filtered_time = time_ms[mask]
+        filtered_pcm = pcm[mask]
+
+        if len(filtered_time) == 0:
+            raise ValueError(
+                f"No samples found in the "
+                f"{start_ms:g}–{end_ms:g} ms window."
+            )
+
+        return filtered_time, filtered_pcm
+
+
+
+    #Channel selection changed
+    def _on_channel_changed(self, channel_name: str):
+        if self._df is None:
+            return
+
+        self._rebuild_waveforms()
+
+
+
    
 
     def _row_label(self, row_idx: int) -> str:
@@ -737,6 +818,11 @@ class MainWindow(QMainWindow):
 
             try:
                 time_ms, pcm = self._get_waveform(row_idx)
+
+                time_ms, pcm = self._filter_channel_window(
+                    time_ms, 
+                    pcm
+                )
             except ValueError as e:
                 errors.append(f"{label}:{e}")
                 continue
@@ -748,7 +834,23 @@ class MainWindow(QMainWindow):
                 "pcm":pcm
             })
         self._wave_panel.rebuild(rows_data)
-        self._wave_label.setText("Waveforms")
+    
+    # Update waveform panel title
+        channel = self._channel_combo.currentText()
+        
+        if channel == "All Channels":
+            self._wave_label.setText(
+                "Waveforms — All Channels"
+            )
+
+        else:
+            start_ms, end_ms = CHANNEL_WINDOWS[channel]
+
+            self._wave_label.setText(
+                f"Waveforms — {channel} "
+                f"({start_ms:g}–{end_ms:g} ms)"
+            )
+
 
         if errors:
           self._status(
