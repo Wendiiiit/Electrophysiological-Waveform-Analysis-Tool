@@ -468,7 +468,7 @@ class MainWindow(QMainWindow):
         #Channel filter 
         toolbar.addSeparator()
 
-        channel_label = QLabel("Filter by Channel:")
+        channel_label = QLabel("⬡ Filter by Channel:")
         toolbar.addWidget(channel_label)
 
         self._channel_combo = QComboBox()
