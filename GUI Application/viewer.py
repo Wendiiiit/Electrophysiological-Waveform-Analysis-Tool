@@ -111,7 +111,7 @@ def attach_hover_readout(plot: pg.PlotWidget):
     plot.addItem(highlight)
 
     # In-plot label instead of QToolTip — QToolTip auto-hides when the mouse stops.
-    readout = pg.TextItem(anchor=(0, 1), fill=pg.mkBrush(0, 0, 0, 170))
+    readout = pg.TextItem(anchor=(0, 1), fill=pg.mkBrush(255, 255, 255, 210),border=pg.mkPen("#A8A8A8"))
     readout.setZValue(1001)
     readout.hide()
     plot.addItem(readout)
@@ -145,7 +145,7 @@ def attach_hover_readout(plot: pg.PlotWidget):
         highlight.setData([px], [py], symbol="o", size=HOVER_DOT_SIZE,
                           brush=pg.mkBrush(color), pen=pg.mkPen(color))
         highlight.show()
-        readout.setText(f"t = {px:.4g} ms\nval = {py:.4g}", color=color)
+        readout.setText(f"dB = {px:.4g} dB\n" f"PtP = {py:.4g}", color="#202124")
         readout.setPos(px, py)
         readout.show()
 
