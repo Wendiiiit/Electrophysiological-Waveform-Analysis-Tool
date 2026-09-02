@@ -78,7 +78,7 @@ PCM_COL_START  = 15             # P (0-based)
 # Channel Display Windows 
 CHANNEL_WINDOWS = {
     "All Channels": None, 
-    "Near-Field VsEP": (0.0, 20.0), 
+    "Biological Response": (0.0, 20.0), 
     "Acceleration": (20.0, 40.0), 
     "Microphone": (40.0, 60.0)
 }
@@ -475,7 +475,7 @@ class MainWindow(QMainWindow):
 
         self._channel_combo.addItems([
             "All Channels",
-            "Near-Field VsEP",
+            "Biological Response",
             "Acceleration",
             "Microphone",
         ])
@@ -925,6 +925,10 @@ class MainWindow(QMainWindow):
 
             try:
                 time_ms, pcm = self._get_waveform(row_idx)
+                time_ms, pcm = self._filter_channel_window(
+                    time_ms, 
+                    pcm
+                )
             except ValueError as e:
                 errors.append(f"{label}:{e}")
                 continue
