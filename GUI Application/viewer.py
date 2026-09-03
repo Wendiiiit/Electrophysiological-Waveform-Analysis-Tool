@@ -611,7 +611,7 @@ class MainWindow(QMainWindow):
 
             # Extract PtP measurements for display
             vest_ptp = row.iloc[11]
-            coch_ptp = row.iloc[15]
+            coch_ptp = row.iloc[14]
 
             measurement_values = [
             (vest_ptp,VESTIBULAR_COLOR),
