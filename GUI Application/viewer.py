@@ -17,6 +17,7 @@ import math
 
 #Import function from input_output.py
 from input_output import build_io_curve_from_table
+from snr_analysis import calculate_snr, calculate_noise_ptp
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QSplitter, QTableWidget, QTableWidgetItem, QHeaderView,
@@ -48,6 +49,7 @@ COCHLEAR_COLOR   = "#D7E3F0"
 MERGED_COLOR   = "#ffffff"
 VESTIBULAR_PLOT_COLOR = "#B9783E"
 COCHLEAR_PLOT_COLOR   = "#5B7FA6"
+SNR_COLOR = "#E3D7F4"
 
 # ── Data table column colours ────────────────────────────────────────────────
 COLUMN_COLORS = {
@@ -62,6 +64,7 @@ COLUMN_COLORS = {
     "Desc": NEUTRAL_METADATA_COLOR,
     "Vestibular PtP": VESTIBULAR_COLOR,
     "Cochlear PtP": COCHLEAR_COLOR,
+    "SNR (dB)": SNR_COLOR,
 }
 
 # ── Layout constants ──────────────────────────────────────────────────────────
@@ -584,7 +587,7 @@ class MainWindow(QMainWindow):
 
         #Adding more Columns to GUI, for Cochlear and Vestibular PtP
         #Removed Vestibular Min Max, Cochlear Min Max, Global Min Max and PCM samples Columns. 
-        col_headers = ["✓"] + meta_cols + ["Vestibular PtP","Cochlear PtP"]
+        col_headers = ["✓"] + meta_cols + ["Vestibular PtP","Cochlear PtP", "SNR (dB)"]
         self._table.blockSignals(True)
         self._table.clearContents()
         self._table.setRowCount(len(df))
@@ -612,10 +615,31 @@ class MainWindow(QMainWindow):
             # Extract PtP measurements for display
             vest_ptp = row.iloc[11]
             coch_ptp = row.iloc[14]
+            
+            # Calculate SNR using the existing ptp values 
+            try:
+                # Get original full waveform for this row 
+                time_ms, pcm = self._get_waveform(row_idx)
+                
+                # Calculate Vestibular Noise PtP from 0-1ms 
+                vestibular_noise_ptp = calculate_noise_ptp(
+                    time_ms,
+                    pcm
+                )
+                
+                # Calculate SNR: Cochlear Signal PtP/Vestibular Noise PtP
+                snr = calculate_snr(
+                    float(coch_ptp),
+                    vestibular_noise_ptp
+                )
+                
+            except (TypeError, ValueError): 
+                snr = np.nan
 
             measurement_values = [
             (vest_ptp,VESTIBULAR_COLOR),
             (coch_ptp,COCHLEAR_COLOR),
+            (snr, SNR_COLOR)
             ]
 
             #Optional display depending on NA value logic 
@@ -742,8 +766,7 @@ class MainWindow(QMainWindow):
            raise ValueError("The time axis is not strictly increasing.")
 
         return time_ms, pcm
-
-
+    
     #Channel filtering logic
     def _filter_channel_window(
         self,
