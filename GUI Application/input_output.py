@@ -15,6 +15,7 @@ from typing import Callable
 
 import numpy as np
 import pyqtgraph as pg
+import pyqtgraph.exporters
 
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -55,6 +56,40 @@ class IOCurveSettings:
     auto_y: bool
     y_min: float | None
     y_max: float | None
+
+
+def export_io_graph(
+    plot: pg.PlotWidget,
+    file_path: str,
+):
+    """
+    Export an I/O graph as SVG or PNG.
+    """
+
+    if file_path.lower().endswith(".svg"):
+
+        exporter = pyqtgraph.exporters.SVGExporter(
+            plot.plotItem
+        )
+
+        exporter.export(file_path)
+
+    elif file_path.lower().endswith(".png"):
+
+        exporter = pyqtgraph.exporters.ImageExporter(
+            plot.plotItem
+        )
+
+        # Increase export resolution
+        exporter.parameters()["width"] = 2400
+
+        exporter.export(file_path)
+
+    else:
+        raise ValueError(
+            "Unsupported export format. Use .svg or .png."
+        )
+
 
 
 def _find_table_column(table: QTableWidget, header_name: str) -> int | None:

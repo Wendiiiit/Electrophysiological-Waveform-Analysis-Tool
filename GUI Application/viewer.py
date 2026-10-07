@@ -16,8 +16,13 @@ import pandas as pd
 import math
 
 #Import function from input_output.py
-from input_output import build_io_curve_from_table
+from input_output import (
+    build_io_curve_from_table, 
+    export_io_graph
+)
+
 from snr_analysis import calculate_snr, calculate_noise_ptp
+
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QSplitter, QTableWidget, QTableWidgetItem, QHeaderView,
@@ -387,6 +392,15 @@ class MainWindow(QMainWindow):
                 font-weight: bold;
                 font-size: 12px;
             }}
+            QPushButton#exportButton {{
+                background: #6c85ab;
+                color: black;
+                border: none;
+                padding: 6px 14px;
+                border-radius: 4px;
+                font-weight: bold;
+                font-size: 12px;
+            }}
             QPushButton:hover {{ background: #6aaef3; }}
             QPushButton:pressed {{ background: #3a7acc; }}
             QPushButton#secondary {{
@@ -419,6 +433,7 @@ class MainWindow(QMainWindow):
         self._check_states: dict[int, bool] = {}
         # Whether in merged view currently? 
         self._merged_view = False
+        self._current_io_plot = None
 
         self._build_ui()
         self._status("No file loaded — use Open to get started.")
@@ -463,6 +478,12 @@ class MainWindow(QMainWindow):
         self._io_btn.clicked.connect(self._show_io_curve)
         toolbar.addWidget(self._io_btn)
 
+        # Export I/O Graph Button 
+        self._export_io_btn = QPushButton("⇩ Export Graph")
+        self._export_io_btn.clicked.connect(self._export_io_graph)
+        self._export_io_btn.setVisible(False)
+        toolbar.addWidget(self._export_io_btn)
+        
         self._back_btn = QPushButton("← Back")
         self._back_btn.setObjectName("secondary")
         self._back_btn.clicked.connect(self._show_stacked)
@@ -523,10 +544,30 @@ class MainWindow(QMainWindow):
         bottom_layout.setContentsMargins(8, 4, 8, 8)
         bottom_layout.setSpacing(4)
 
+       # Header row above waveform / I/O graph panel
+        panel_header = QHBoxLayout()
+
         self._wave_label = QLabel("Waveforms")
         self._wave_label.setObjectName("heading")
-        bottom_layout.addWidget(self._wave_label)
 
+        panel_header.addWidget(self._wave_label)
+
+        # Push Export button to the far right
+        panel_header.addStretch()
+
+        self._export_io_btn = QPushButton("⇩ Export")
+        self._export_io_btn.setObjectName("exportButton")
+        self._export_io_btn.clicked.connect(self._export_io_graph)
+
+        # Only visible when an I/O graph is displayed
+        self._export_io_btn.setVisible(False)
+
+        panel_header.addWidget(self._export_io_btn)
+
+        bottom_layout.addLayout(panel_header)
+
+
+        # Graph / waveform panel
         self._wave_panel = WaveformPanel()
         bottom_layout.addWidget(self._wave_panel)
 
@@ -934,6 +975,8 @@ class MainWindow(QMainWindow):
         if result is None:
             return
 
+        self._current_io_plot = result.plot
+        
         self._wave_panel.show_plot_widget(
             result.plot
         )
@@ -944,6 +987,7 @@ class MainWindow(QMainWindow):
 
         self._merge_btn.setVisible(False)
         self._io_btn.setVisible(False)
+        self._export_io_btn.setVisible(True)
         self._back_btn.setVisible(True)
 
         self._status(
@@ -1016,10 +1060,75 @@ class MainWindow(QMainWindow):
     # ── Stacked Waveform ────────────────────────────────────────────────────────────
     def _show_stacked(self):
         self._merged_view = False
+        self._current_io_plot = None
         self._rebuild_waveforms()
         self._merge_btn.setVisible(True)
         self._io_btn.setVisible(True)
+        self._export_io_btn.setVisible(False)
         self._back_btn.setVisible(False)
+
+
+
+    # ----Export Button for I/O Graph ---------------------------
+    def _export_io_graph(self):
+
+        if self._current_io_plot is None:
+            QMessageBox.information(
+                self,
+                "Export I/O Graph",
+                "Generate an I/O graph before exporting."
+            )
+            return
+
+        file_path, selected_filter = QFileDialog.getSaveFileName(
+            self,
+            "Export I/O Graph",
+            "io_graph",
+            "Scalable Vector Graphics (*.svg);;PNG Image (*.png)"
+        )
+        
+        if not file_path:
+            return
+
+        # Add extension if user didn't type it
+        if selected_filter.startswith("Scalable"):
+            if not file_path.lower().endswith(".svg"):
+                file_path += ".svg"
+        
+        elif selected_filter.startswith("PNG"):
+            if not file_path.lower().endswith(".png"):
+                file_path += ".png"
+
+        try:
+            
+            export_io_graph(
+                self._current_io_plot,
+                file_path,
+            )
+
+            QMessageBox.information(
+                self,
+                "Export Complete",
+                "I/O graph exported successfully."
+            )
+
+            self._status(
+                f"I/O graph exported to {file_path}"
+            )
+
+        except Exception as e:
+
+            QMessageBox.critical(
+                self,
+                "Export Error",
+                f"Could not export I/O graph:\n{e}"
+            )
+    
+    
+    
+    
+    
+    
 
     # ── Status bar ────────────────────────────────────────────────────────────
 
