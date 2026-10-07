@@ -49,7 +49,6 @@ COCHLEAR_COLOR   = "#D7E3F0"
 MERGED_COLOR   = "#ffffff"
 VESTIBULAR_PLOT_COLOR = "#B9783E"
 COCHLEAR_PLOT_COLOR   = "#5B7FA6"
-SNR_COLOR = "#E3D7F4"
 
 # ── Data table column colours ────────────────────────────────────────────────
 COLUMN_COLORS = {
@@ -62,9 +61,12 @@ COLUMN_COLORS = {
     "ISI": NEUTRAL_METADATA_COLOR,
     "cont. dB noise": NEUTRAL_METADATA_COLOR,
     "Desc": NEUTRAL_METADATA_COLOR,
+    
     "Vestibular PtP": VESTIBULAR_COLOR,
+    "Vestibular SNR": VESTIBULAR_COLOR,
+    
     "Cochlear PtP": COCHLEAR_COLOR,
-    "SNR (dB)": SNR_COLOR,
+    "Cochlear SNR": COCHLEAR_COLOR,
 }
 
 # ── Layout constants ──────────────────────────────────────────────────────────
@@ -92,12 +94,12 @@ CHANNEL_WINDOWS = {
 #For handling missing MIN MAX PtP
 def format_optional_value(value) -> str:
     if pd.isna(value):
-        return "—"
+        return "N/A"
 
     try:
         return f"{float(value):.3f}"
     except (TypeError, ValueError):
-        return "—"
+        return "N/A"
 
 def merge_pcm(arrays: list[np.ndarray]) -> np.ndarray:
     """Sum multiple PCM arrays (audio mix), truncating to the shortest length."""
@@ -587,7 +589,7 @@ class MainWindow(QMainWindow):
 
         #Adding more Columns to GUI, for Cochlear and Vestibular PtP
         #Removed Vestibular Min Max, Cochlear Min Max, Global Min Max and PCM samples Columns. 
-        col_headers = ["✓"] + meta_cols + ["Vestibular PtP","Cochlear PtP", "SNR (dB)"]
+        col_headers = ["✓"] + meta_cols + ["Vestibular PtP","Vestibular SNR", "Cochlear PtP","Cochlear SNR", ]
         self._table.blockSignals(True)
         self._table.clearContents()
         self._table.setRowCount(len(df))
@@ -613,33 +615,57 @@ class MainWindow(QMainWindow):
                 self._table.setItem(row_idx, col_offset + 1, item)
 
             # Extract PtP measurements for display
-            vest_ptp = row.iloc[11]
-            coch_ptp = row.iloc[14]
+            # pd.to_numeric ensures us to get a numeric value that can be safely used in maths 
+            vest_ptp = pd.to_numeric(
+                row.iloc[11],
+                errors= "coerce"
+            )
+            coch_ptp = pd.to_numeric(
+                row.iloc[14],
+                errors= "coerce"
+            )
             
-            # Calculate SNR using the existing ptp values 
+            # Calculate SNR using the existing ptp values for each row 
             try:
                 # Get original full waveform for this row 
                 time_ms, pcm = self._get_waveform(row_idx)
                 
-                # Calculate Vestibular Noise PtP from 0-1ms 
-                vestibular_noise_ptp = calculate_noise_ptp(
-                    time_ms,
+                #Shared baseline noise from 0-1ms 
+                noise_ptp = calculate_noise_ptp(
+                    time_ms, 
                     pcm
                 )
                 
-                # Calculate SNR: Cochlear Signal PtP/Vestibular Noise PtP
-                snr = calculate_snr(
-                    float(coch_ptp),
-                    vestibular_noise_ptp
+                # Convert NaN measurements to None 
+                vestibular_value = (
+                    None
+                    if pd.isna(vest_ptp)
+                    else float(vest_ptp)
                 )
                 
-            except (TypeError, ValueError): 
-                snr = np.nan
+                cochlear_value = (
+                    None
+                    if pd.isna(coch_ptp)
+                    else float (coch_ptp)
+                )
+                
+                # Calculate two separate SNR values 
+                vestibular_snr, cochlear_snr = calculate_snr (
+                    noise_ptp = noise_ptp, 
+                    vestibular_signal_ptp = vestibular_value, 
+                    cochlear_signal_ptp = cochlear_value, 
+                )
+                  
+            except (ValueError, TypeError): 
+                vestibular_snr = None
+                cochlear_snr = None 
 
             measurement_values = [
             (vest_ptp,VESTIBULAR_COLOR),
+            (vestibular_snr, VESTIBULAR_COLOR),
+            
             (coch_ptp,COCHLEAR_COLOR),
-            (snr, SNR_COLOR)
+            (cochlear_snr, COCHLEAR_COLOR),
             ]
 
             #Optional display depending on NA value logic 

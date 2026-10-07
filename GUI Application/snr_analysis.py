@@ -47,6 +47,7 @@ def calculate_noise_ptp(
 
 # A function to calculate the Signal to Noise ratio 
 def calculate_snr(
+    noise_ptp: float, 
     cochlear_signal_ptp: float | None,
     vestibular_signal_ptp: float | None,
     # should noise pcm be float or np.ndarray? 
