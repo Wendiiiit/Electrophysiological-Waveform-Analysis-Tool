@@ -9,3 +9,8 @@ F3: Filter by Channel
 
 F4: Filter by Conditions 
 <img width="1252" height="1691" alt="image" src="https://github.com/user-attachments/assets/63a65e67-fe9e-42be-b22c-746e1874eb66" />
+
+F5: Input and Output Function
+
+F8: Signal-to-Noise Ratio (SNR)
+<img width="1259" height="1830" alt="image" src="https://github.com/user-attachments/assets/ef300b38-e531-4ed0-909d-760fa72695a1" />
