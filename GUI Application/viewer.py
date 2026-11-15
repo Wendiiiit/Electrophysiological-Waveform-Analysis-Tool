@@ -1035,7 +1035,7 @@ class MainWindow(QMainWindow):
 
         if not rows_data: 
             self._merged_view = False
-            self.status(
+            self._status(
                 "None of the selected recordings contain valid waveform data."
             )
             return
